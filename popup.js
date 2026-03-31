@@ -241,6 +241,116 @@
     });
   });
 
+  // ── Export / Import ────────────────────────────────────────
+
+  const importFileInput = document.getElementById("import-file");
+  const importStatus = document.getElementById("import-status");
+  let importStatusTimer = null;
+
+  function showImportStatus(message, isError = false) {
+    if (importStatusTimer) clearTimeout(importStatusTimer);
+    importStatus.textContent = message;
+    importStatus.className = isError ? "import-error" : "import-success";
+    importStatusTimer = setTimeout(() => {
+      importStatus.className = "hidden";
+      importStatusTimer = null;
+    }, 4000);
+  }
+
+  // Export: download shortcuts as JSON
+  document.getElementById("btn-export").addEventListener("click", () => {
+    if (shortcuts.length === 0) {
+      showImportStatus("No shortcuts to export", true);
+      return;
+    }
+    const data = JSON.stringify(
+      { shortcuts, exportedAt: new Date().toISOString() },
+      null,
+      2
+    );
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bhaba-tools-shortcuts.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showImportStatus(`Exported ${shortcuts.length} shortcuts`);
+  });
+
+  // Import: trigger file picker
+  document.getElementById("btn-import").addEventListener("click", () => {
+    importFileInput.value = "";
+    importFileInput.click();
+  });
+
+  // Handle selected file
+  const VALID_TYPES = new Set(["url", "snippet", "action"]);
+  const MAX_FILE_SIZE = 1_000_000; // 1 MB
+
+  importFileInput.addEventListener("change", () => {
+    const file = importFileInput.files[0];
+    if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE) {
+      showImportStatus("File too large (max 1 MB)", true);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      showImportStatus("Failed to read file", true);
+    };
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data.shortcuts || !Array.isArray(data.shortcuts)) {
+          showImportStatus("Invalid file: missing shortcuts array", true);
+          return;
+        }
+
+        // Validate each shortcut has required fields and valid type
+        const valid = data.shortcuts.filter(
+          (s) =>
+            s &&
+            typeof s.id === "string" &&
+            typeof s.label === "string" &&
+            typeof s.type === "string" &&
+            VALID_TYPES.has(s.type) &&
+            typeof s.value === "string"
+        ).map((s) => ({
+          id: s.id,
+          label: s.label,
+          description: s.description || "",
+          type: s.type,
+          value: s.value,
+          category: s.category || "Custom",
+        }));
+
+        if (valid.length === 0) {
+          showImportStatus("No valid shortcuts found in file", true);
+          return;
+        }
+
+        const skipped = data.shortcuts.length - valid.length;
+        if (!confirm(`This will replace your current ${shortcuts.length} shortcuts with ${valid.length} imported ones. Continue?`)) {
+          return;
+        }
+
+        shortcuts = valid;
+        saveShortcuts(() => {
+          renderList();
+          let msg = `Imported ${valid.length} shortcuts`;
+          if (skipped > 0) msg += ` (${skipped} skipped — invalid)`;
+          showImportStatus(msg);
+        });
+      } catch (err) {
+        showImportStatus("Failed to parse JSON file", true);
+      }
+    };
+    reader.readAsText(file);
+  });
+
   // ── Google Drive sync ──────────────────────────────────────
 
   const driveStatus = document.getElementById("drive-status");
@@ -336,7 +446,7 @@
     );
   });
 
-  // Import
+  // Import from Drive
   document.getElementById("btn-drive-restore").addEventListener("click", () => {
     const btn = document.getElementById("btn-drive-restore");
     btn.disabled = true;
