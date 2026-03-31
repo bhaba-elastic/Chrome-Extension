@@ -321,6 +321,78 @@ body {
   background: #45475a;
 }
 
+/* Export / Import section */
+#export-import-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #313244;
+}
+
+.btn-export-import {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: #313244;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btn-export-import:hover {
+  background: #45475a;
+}
+
+#btn-export {
+  background: rgba(166, 227, 161, 0.1);
+  border-color: rgba(166, 227, 161, 0.2);
+  color: #a6e3a1;
+}
+
+#btn-export:hover {
+  background: rgba(166, 227, 161, 0.2);
+}
+
+#btn-import {
+  background: rgba(137, 180, 250, 0.1);
+  border-color: rgba(137, 180, 250, 0.2);
+  color: #89b4fa;
+}
+
+#btn-import:hover {
+  background: rgba(137, 180, 250, 0.2);
+}
+
+#import-file.hidden {
+  display: none;
+}
+
+#import-status {
+  width: 100%;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+#import-status.hidden {
+  display: none;
+}
+
+#import-status.import-success {
+  background: rgba(166, 227, 161, 0.1);
+  color: #a6e3a1;
+}
+
+#import-status.import-error {
+  background: rgba(243, 139, 168, 0.1);
+  color: #f38ba8;
+}
+
 /* Google Drive sync section */
 #drive-section {
   padding: 10px 16px;
