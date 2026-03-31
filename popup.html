@@ -59,6 +59,43 @@
       </div>
     </div>
 
+    <!-- Google Drive sync -->
+    <div id="drive-section">
+      <div id="drive-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 19.5h20L12 2z"/>
+        </svg>
+        <span>Google Drive Sync</span>
+      </div>
+
+      <!-- Disconnected state: show connect button -->
+      <div id="drive-disconnected">
+        <p class="drive-hint">Connect to save and restore your shortcuts across devices</p>
+        <button id="btn-drive-connect" class="btn-drive btn-drive-connect">
+          Connect Google Drive
+        </button>
+      </div>
+
+      <!-- Connected state: show user info + backup/import -->
+      <div id="drive-connected" class="hidden">
+        <div id="drive-account">
+          <span id="drive-user-email"></span>
+          <button id="btn-drive-disconnect" class="btn-drive-link" title="Disconnect">Disconnect</button>
+        </div>
+        <div id="drive-buttons">
+          <button id="btn-drive-backup" class="btn-drive" title="Save shortcuts to Google Drive">
+            Backup to Drive
+          </button>
+          <button id="btn-drive-restore" class="btn-drive" title="Import shortcuts from Google Drive">
+            Import from Drive
+          </button>
+        </div>
+      </div>
+
+      <div id="drive-status" class="hidden"></div>
+    </div>
+
     <!-- Footer -->
     <footer id="footer">
       <span>Press <kbd>`</kbd> on any page to open the palette</span>

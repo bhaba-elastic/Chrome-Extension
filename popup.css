@@ -321,6 +321,150 @@ body {
   background: #45475a;
 }
 
+/* Google Drive sync section */
+#drive-section {
+  padding: 10px 16px;
+  border-top: 1px solid #313244;
+}
+
+#drive-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a6adc8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+#drive-header svg {
+  color: #89b4fa;
+}
+
+.drive-hint {
+  font-size: 11px;
+  color: #6c7086;
+  margin-bottom: 8px;
+}
+
+#drive-disconnected.hidden,
+#drive-connected.hidden {
+  display: none;
+}
+
+#drive-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: rgba(137, 180, 250, 0.08);
+  border-radius: 6px;
+}
+
+#drive-user-email {
+  font-size: 11px;
+  color: #89b4fa;
+  font-weight: 500;
+}
+
+.btn-drive-link {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.btn-drive-link:hover {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.btn-drive-connect {
+  width: 100%;
+  background: rgba(137, 180, 250, 0.15) !important;
+  border-color: rgba(137, 180, 250, 0.3) !important;
+  color: #89b4fa !important;
+}
+
+.btn-drive-connect:hover:not(:disabled) {
+  background: rgba(137, 180, 250, 0.25) !important;
+}
+
+#drive-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-drive {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  background: #313244;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.btn-drive:hover {
+  background: #45475a;
+}
+
+.btn-drive:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#btn-drive-backup {
+  background: rgba(166, 227, 161, 0.1);
+  border-color: rgba(166, 227, 161, 0.2);
+  color: #a6e3a1;
+}
+
+#btn-drive-backup:hover:not(:disabled) {
+  background: rgba(166, 227, 161, 0.2);
+}
+
+#btn-drive-restore {
+  background: rgba(137, 180, 250, 0.1);
+  border-color: rgba(137, 180, 250, 0.2);
+  color: #89b4fa;
+}
+
+#btn-drive-restore:hover:not(:disabled) {
+  background: rgba(137, 180, 250, 0.2);
+}
+
+#drive-status {
+  margin-top: 8px;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+#drive-status.hidden {
+  display: none;
+}
+
+#drive-status.drive-success {
+  background: rgba(166, 227, 161, 0.1);
+  color: #a6e3a1;
+}
+
+#drive-status.drive-error {
+  background: rgba(243, 139, 168, 0.1);
+  color: #f38ba8;
+}
+
 /* Footer */
 #footer {
   padding: 10px 16px;

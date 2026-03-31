@@ -241,6 +241,128 @@
     });
   });
 
+  // ── Google Drive sync ──────────────────────────────────────
+
+  const driveStatus = document.getElementById("drive-status");
+  const driveDisconnected = document.getElementById("drive-disconnected");
+  const driveConnected = document.getElementById("drive-connected");
+  const driveUserEmail = document.getElementById("drive-user-email");
+
+  let driveStatusTimer = null;
+  function showDriveStatus(message, isError = false) {
+    if (driveStatusTimer) clearTimeout(driveStatusTimer);
+    driveStatus.textContent = message;
+    driveStatus.className = isError ? "drive-error" : "drive-success";
+    driveStatusTimer = setTimeout(() => {
+      driveStatus.className = "hidden";
+      driveStatusTimer = null;
+    }, 4000);
+  }
+
+  function setDriveConnected(email) {
+    driveDisconnected.classList.add("hidden");
+    driveConnected.classList.remove("hidden");
+    driveUserEmail.textContent = email;
+  }
+
+  function setDriveDisconnected() {
+    driveConnected.classList.add("hidden");
+    driveDisconnected.classList.remove("hidden");
+    driveUserEmail.textContent = "";
+  }
+
+  // Check connection status on load
+  function checkDriveStatus() {
+    chrome.runtime.sendMessage({ action: "drive-status" }, (resp) => {
+      if (resp && resp.connected) {
+        setDriveConnected(resp.email);
+      } else {
+        setDriveDisconnected();
+      }
+    });
+  }
+
+  // Connect
+  document.getElementById("btn-drive-connect").addEventListener("click", () => {
+    const btn = document.getElementById("btn-drive-connect");
+    btn.disabled = true;
+    btn.textContent = "Connecting...";
+
+    chrome.runtime.sendMessage({ action: "drive-connect" }, (resp) => {
+      btn.disabled = false;
+      btn.textContent = "Connect Google Drive";
+      if (resp && resp.success) {
+        setDriveConnected(resp.email);
+        showDriveStatus("Connected as " + resp.email);
+      } else {
+        showDriveStatus((resp && resp.error) || "Connection failed", true);
+      }
+    });
+  });
+
+  // Disconnect
+  document.getElementById("btn-drive-disconnect").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "drive-disconnect" }, (resp) => {
+      if (resp && resp.success) {
+        setDriveDisconnected();
+        showDriveStatus("Disconnected from Google Drive");
+      }
+    });
+  });
+
+  // Backup
+  document.getElementById("btn-drive-backup").addEventListener("click", () => {
+    const btn = document.getElementById("btn-drive-backup");
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    chrome.runtime.sendMessage(
+      { action: "drive-backup", shortcuts },
+      (resp) => {
+        btn.disabled = false;
+        btn.textContent = "Backup to Drive";
+        if (resp && resp.success) {
+          showDriveStatus(
+            resp.updated ? "Shortcuts updated in Drive" : "Shortcuts saved to Drive"
+          );
+        } else {
+          const err = (resp && resp.error) || "Backup failed";
+          if (err.includes("Not connected") || err.includes("reconnect")) {
+            setDriveDisconnected();
+          }
+          showDriveStatus(err, true);
+        }
+      }
+    );
+  });
+
+  // Import
+  document.getElementById("btn-drive-restore").addEventListener("click", () => {
+    const btn = document.getElementById("btn-drive-restore");
+    btn.disabled = true;
+    btn.textContent = "Importing...";
+
+    chrome.runtime.sendMessage({ action: "drive-restore" }, (resp) => {
+      btn.disabled = false;
+      btn.textContent = "Import from Drive";
+      if (resp && resp.success) {
+        shortcuts = resp.shortcuts;
+        renderList();
+        const date = resp.exportedAt
+          ? new Date(resp.exportedAt).toLocaleDateString()
+          : "unknown date";
+        showDriveStatus(`Restored ${resp.shortcuts.length} shortcuts (backed up ${date})`);
+      } else {
+        const err = (resp && resp.error) || "Restore failed";
+        if (err.includes("Not connected") || err.includes("reconnect")) {
+          setDriveDisconnected();
+        }
+        showDriveStatus(err, true);
+      }
+    });
+  });
+
   // ── Initialize ─────────────────────────────────────────────
   loadShortcuts();
+  checkDriveStatus();
 })();
