@@ -318,5 +318,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ shortcuts: DEFAULT_SHORTCUTS });
       });
       return true;
+
+    case "track-usage":
+      // Increment usage count for a shortcut
+      chrome.storage.local.get("usageCounts", (data) => {
+        const counts = data.usageCounts || {};
+        counts[message.shortcutId] = (counts[message.shortcutId] || 0) + 1;
+        chrome.storage.local.set({ usageCounts: counts }, () => {
+          sendResponse({ success: true, count: counts[message.shortcutId] });
+        });
+      });
+      return true;
+
+    case "get-usage-counts":
+      chrome.storage.local.get("usageCounts", (data) => {
+        sendResponse({ usageCounts: data.usageCounts || {} });
+      });
+      return true;
   }
 });

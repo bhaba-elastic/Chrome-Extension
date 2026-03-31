@@ -11,6 +11,7 @@
   let filtered = [];
   let selectedIndex = 0;
   let isOpen = false;
+  let usageCounts = {};
 
   // ── Build DOM ──────────────────────────────────────────────
   const overlay = document.createElement("div");
@@ -87,16 +88,26 @@
       return;
     }
 
-    // Group by category for visual separation
+    // When searching, show a flat frequency-ranked list (no category grouping)
+    // When browsing (no query), group by category but sort within each category by usage
+    const query = input.value.trim();
     let currentCategory = null;
 
     filtered.forEach((item, index) => {
-      // Insert category header when category changes
-      if (item.category !== currentCategory) {
-        currentCategory = item.category;
+      if (!query) {
+        // Group by category when not searching
+        if (item.category !== currentCategory) {
+          currentCategory = item.category;
+          const catEl = document.createElement("div");
+          catEl.className = "devpalette-category";
+          catEl.textContent = currentCategory;
+          results.appendChild(catEl);
+        }
+      } else if (index === 0) {
+        // During search, show a single "Best Matches" header
         const catEl = document.createElement("div");
         catEl.className = "devpalette-category";
-        catEl.textContent = currentCategory;
+        catEl.textContent = "Best Matches";
         results.appendChild(catEl);
       }
 
@@ -151,16 +162,43 @@
 
   // ── Filtering ──────────────────────────────────────────────
 
+  // Sort shortcuts by usage frequency (most used first)
+  function sortByUsage(items) {
+    return [...items].sort((a, b) => (usageCounts[b.id] || 0) - (usageCounts[a.id] || 0));
+  }
+
+  // Sort within each category by usage, preserving category order
+  function sortWithinCategories(items) {
+    const grouped = {};
+    const categoryOrder = [];
+    items.forEach((s) => {
+      if (!grouped[s.category]) {
+        grouped[s.category] = [];
+        categoryOrder.push(s.category);
+      }
+      grouped[s.category].push(s);
+    });
+    const result = [];
+    categoryOrder.forEach((cat) => {
+      result.push(...sortByUsage(grouped[cat]));
+    });
+    return result;
+  }
+
   // Fuzzy-ish filter: matches if every word in the query appears in label or description
   function filterShortcuts(query) {
     if (!query) {
-      filtered = [...shortcuts];
+      // No search: keep category grouping, sort within each category by usage
+      filtered = sortWithinCategories(shortcuts);
     } else {
+      // Searching: flat list sorted entirely by usage frequency
       const words = query.toLowerCase().split(/\s+/);
-      filtered = shortcuts.filter((s) => {
-        const text = (s.label + " " + s.description + " " + s.category).toLowerCase();
-        return words.every((w) => text.includes(w));
-      });
+      filtered = sortByUsage(
+        shortcuts.filter((s) => {
+          const text = (s.label + " " + s.description + " " + s.category).toLowerCase();
+          return words.every((w) => text.includes(w));
+        })
+      );
     }
     selectedIndex = 0;
     render();
@@ -171,6 +209,10 @@
   function executeSelected() {
     const item = filtered[selectedIndex];
     if (!item) return;
+
+    // Track usage for auto-ranking
+    usageCounts[item.id] = (usageCounts[item.id] || 0) + 1;
+    chrome.runtime.sendMessage({ action: "track-usage", shortcutId: item.id });
 
     switch (item.type) {
       case "url":
@@ -280,15 +322,24 @@
     if (isOpen) return;
     isOpen = true;
 
-    // Fetch the latest shortcuts from storage every time the palette opens
-    chrome.runtime.sendMessage({ action: "get-shortcuts" }, (resp) => {
-      if (resp && resp.shortcuts) {
-        shortcuts = resp.shortcuts;
-      }
+    // Fetch shortcuts and usage counts in parallel, render when both are ready
+    let ready = 0;
+    const tryRender = () => {
+      if (++ready < 2) return;
       filterShortcuts("");
       overlay.classList.add("visible");
       input.value = "";
       input.focus();
+    };
+
+    chrome.runtime.sendMessage({ action: "get-shortcuts" }, (resp) => {
+      if (resp && resp.shortcuts) shortcuts = resp.shortcuts;
+      tryRender();
+    });
+
+    chrome.runtime.sendMessage({ action: "get-usage-counts" }, (resp) => {
+      if (resp && resp.usageCounts) usageCounts = resp.usageCounts;
+      tryRender();
     });
   }
 
