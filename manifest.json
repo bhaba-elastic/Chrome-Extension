@@ -11,12 +11,6 @@
     "browsingData",
     "identity"
   ],
-  "oauth2": {
-    "client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
-    "scopes": [
-      "https://www.googleapis.com/auth/drive.file"
-    ]
-  },
   "background": {
     "service_worker": "background.js"
   },

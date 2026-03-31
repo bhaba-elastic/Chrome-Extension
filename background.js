@@ -336,6 +336,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true;
 
+    case "drive-connect":
+      driveConnect()
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "drive-disconnect":
+      driveDisconnect()
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "drive-status":
+      driveGetStatus()
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, connected: false }));
+      return true;
+
     case "drive-backup":
       driveBackup(message.shortcuts)
         .then((result) => sendResponse(result))
@@ -351,22 +369,129 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ── Google Drive sync ────────────────────────────────────────
+//
+// Setup instructions:
+// 1. Go to https://console.cloud.google.com/
+// 2. Create a project (or use an existing one)
+// 3. Enable the "Google Drive API"
+// 4. Go to Credentials → Create Credentials → OAuth 2.0 Client ID
+// 5. Application type: "Web application"
+// 6. Under "Authorized redirect URIs" add:
+//    https://<YOUR_EXTENSION_ID>.chromiumapp.org/
+//    (Find your extension ID at chrome://extensions with Developer mode on)
+// 7. Copy the Client ID and paste it below.
 
+const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com";
+const DRIVE_SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
 const DRIVE_FILENAME = "bhaba-tools-shortcuts.json";
 
-function getAuthToken() {
-  return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(token);
-      }
-    });
-  });
+// ── OAuth via launchWebAuthFlow ──────────────────────────────
+
+function getRedirectURL() {
+  return chrome.identity.getRedirectURL();
 }
 
-// Find existing backup file in Drive by name
+async function driveConnect() {
+  const redirectUrl = getRedirectURL();
+  const authUrl =
+    "https://accounts.google.com/o/oauth2/v2/auth" +
+    `?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
+    `&response_type=token` +
+    `&redirect_uri=${encodeURIComponent(redirectUrl)}` +
+    `&scope=${encodeURIComponent(DRIVE_SCOPES)}` +
+    `&prompt=consent`;
+
+  const responseUrl = await new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl, interactive: true },
+      (callbackUrl) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(callbackUrl);
+        }
+      }
+    );
+  });
+
+  // Extract access token from redirect URL fragment
+  const hashParams = new URLSearchParams(responseUrl.split("#")[1]);
+  const accessToken = hashParams.get("access_token");
+  if (!accessToken) {
+    throw new Error("No access token received");
+  }
+
+  // Fetch user info for display
+  const userResp = await fetch(
+    "https://www.googleapis.com/oauth2/v2/userinfo",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!userResp.ok) throw new Error("Failed to fetch user info");
+  const userInfo = await userResp.json();
+
+  // Store token and user info
+  await chrome.storage.local.set({
+    driveToken: accessToken,
+    driveUser: { email: userInfo.email, name: userInfo.name },
+  });
+
+  return { success: true, email: userInfo.email, name: userInfo.name };
+}
+
+async function driveDisconnect() {
+  const { driveToken } = await chrome.storage.local.get("driveToken");
+  // Revoke the token with Google
+  if (driveToken) {
+    fetch(`https://accounts.google.com/o/oauth2/revoke?token=${driveToken}`).catch(() => {});
+  }
+  await chrome.storage.local.remove(["driveToken", "driveUser"]);
+  return { success: true };
+}
+
+async function driveGetStatus() {
+  const { driveToken, driveUser } = await chrome.storage.local.get(["driveToken", "driveUser"]);
+  if (!driveToken || !driveUser) {
+    return { connected: false };
+  }
+  // Verify token is still valid
+  const resp = await fetch(
+    "https://www.googleapis.com/oauth2/v2/userinfo",
+    { headers: { Authorization: `Bearer ${driveToken}` } }
+  );
+  if (!resp.ok) {
+    // Token expired — clean up
+    await chrome.storage.local.remove(["driveToken", "driveUser"]);
+    return { connected: false, expired: true };
+  }
+  return { connected: true, email: driveUser.email, name: driveUser.name };
+}
+
+// ── Drive file operations ────────────────────────────────────
+
+async function getStoredToken() {
+  const { driveToken } = await chrome.storage.local.get("driveToken");
+  if (!driveToken) throw new Error("Not connected to Google Drive. Please connect first.");
+
+  // Verify token is still valid; if expired, attempt re-auth
+  const check = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${driveToken}` },
+  });
+  if (check.ok) return driveToken;
+
+  // Token expired — try silent re-auth
+  try {
+    const result = await driveConnect();
+    if (result.success) {
+      const { driveToken: newToken } = await chrome.storage.local.get("driveToken");
+      return newToken;
+    }
+  } catch (_) {
+    // Silent re-auth failed
+  }
+  await chrome.storage.local.remove(["driveToken", "driveUser"]);
+  throw new Error("Session expired. Please reconnect to Google Drive.");
+}
+
 async function findDriveFile(token) {
   const query = encodeURIComponent(
     `name='${DRIVE_FILENAME}' and trashed=false`
@@ -380,14 +505,12 @@ async function findDriveFile(token) {
   return data.files && data.files.length > 0 ? data.files[0] : null;
 }
 
-// Backup shortcuts to Google Drive
 async function driveBackup(shortcuts) {
-  const token = await getAuthToken();
+  const token = await getStoredToken();
   const existing = await findDriveFile(token);
   const content = JSON.stringify({ shortcuts, exportedAt: new Date().toISOString() }, null, 2);
 
   if (existing) {
-    // Update existing file
     const resp = await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`,
       {
@@ -402,7 +525,6 @@ async function driveBackup(shortcuts) {
     if (!resp.ok) throw new Error(`Drive update failed: ${resp.status}`);
     return { success: true, fileId: existing.id, updated: true };
   } else {
-    // Create new file with multipart upload
     const metadata = { name: DRIVE_FILENAME, mimeType: "application/json" };
     const boundary = "----DriveBackupBoundary";
     const body =
@@ -431,9 +553,8 @@ async function driveBackup(shortcuts) {
   }
 }
 
-// Restore shortcuts from Google Drive
 async function driveRestore() {
-  const token = await getAuthToken();
+  const token = await getStoredToken();
   const existing = await findDriveFile(token);
 
   if (!existing) {
@@ -451,7 +572,23 @@ async function driveRestore() {
     return { success: false, error: "Invalid backup file format" };
   }
 
-  // Save restored shortcuts to local storage
-  await chrome.storage.local.set({ shortcuts: data.shortcuts });
-  return { success: true, shortcuts: data.shortcuts, exportedAt: data.exportedAt };
+  // Validate each shortcut has required fields
+  const validShortcuts = data.shortcuts.filter(
+    (s) => s && typeof s.id === "string" && typeof s.label === "string" &&
+           typeof s.type === "string" && typeof s.value === "string"
+  ).map((s) => ({
+    id: s.id,
+    label: s.label,
+    description: s.description || "",
+    type: s.type,
+    value: s.value,
+    category: s.category || "Custom",
+  }));
+
+  if (validShortcuts.length === 0) {
+    return { success: false, error: "Backup file contains no valid shortcuts" };
+  }
+
+  await chrome.storage.local.set({ shortcuts: validShortcuts });
+  return { success: true, shortcuts: validShortcuts, exportedAt: data.exportedAt };
 }
