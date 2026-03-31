@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bhaba's Tools</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <h1>💀 Bhaba's Tools</h1>
+      <p class="subtitle">Manage your hacking toolkit shortcuts</p>
+    </header>
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <input type="text" id="search" placeholder="Search shortcuts..." />
+      <button id="btn-add" title="Add new shortcut">+ Add</button>
+      <button id="btn-reset" title="Reset to defaults">Reset</button>
+    </div>
+
+    <!-- Shortcut list -->
+    <div id="shortcut-list"></div>
+
+    <!-- Add/Edit form (hidden by default) -->
+    <div id="form-overlay" class="hidden">
+      <div id="form-container">
+        <h2 id="form-title">Add Shortcut</h2>
+        <div class="form-group">
+          <label for="form-label">Label</label>
+          <input type="text" id="form-label" placeholder="My Shortcut" />
+        </div>
+        <div class="form-group">
+          <label for="form-description">Description</label>
+          <input type="text" id="form-description" placeholder="What this shortcut does" />
+        </div>
+        <div class="form-group">
+          <label for="form-type">Type</label>
+          <select id="form-type">
+            <option value="url">URL — Navigate to a page</option>
+            <option value="snippet">Snippet — Copy code to clipboard</option>
+            <option value="action">Action — Run a browser action</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="form-value" id="form-value-label">URL</label>
+          <textarea id="form-value" rows="3" placeholder="https://example.com"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="form-category">Category</label>
+          <input type="text" id="form-category" placeholder="Navigation" />
+        </div>
+        <div id="form-actions">
+          <button id="btn-cancel" class="btn-secondary">Cancel</button>
+          <button id="btn-save" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer id="footer">
+      <span>Press <kbd>`</kbd> on any page to open the palette</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
