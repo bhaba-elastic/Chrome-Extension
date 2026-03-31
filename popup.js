@@ -241,6 +241,66 @@
     });
   });
 
+  // ── Google Drive sync ──────────────────────────────────────
+
+  const driveStatus = document.getElementById("drive-status");
+
+  function showDriveStatus(message, isError = false) {
+    driveStatus.textContent = message;
+    driveStatus.className = isError ? "drive-error" : "drive-success";
+    setTimeout(() => {
+      driveStatus.className = "hidden";
+    }, 4000);
+  }
+
+  document.getElementById("btn-drive-backup").addEventListener("click", () => {
+    const btn = document.getElementById("btn-drive-backup");
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    chrome.runtime.sendMessage(
+      { action: "drive-backup", shortcuts },
+      (resp) => {
+        btn.disabled = false;
+        btn.textContent = "Backup to Drive";
+        if (resp && resp.success) {
+          showDriveStatus(
+            resp.updated ? "Shortcuts updated in Drive" : "Shortcuts saved to Drive"
+          );
+        } else {
+          showDriveStatus(
+            (resp && resp.error) || "Backup failed",
+            true
+          );
+        }
+      }
+    );
+  });
+
+  document.getElementById("btn-drive-restore").addEventListener("click", () => {
+    const btn = document.getElementById("btn-drive-restore");
+    btn.disabled = true;
+    btn.textContent = "Importing...";
+
+    chrome.runtime.sendMessage({ action: "drive-restore" }, (resp) => {
+      btn.disabled = false;
+      btn.textContent = "Import from Drive";
+      if (resp && resp.success) {
+        shortcuts = resp.shortcuts;
+        renderList();
+        const date = resp.exportedAt
+          ? new Date(resp.exportedAt).toLocaleDateString()
+          : "unknown date";
+        showDriveStatus(`Restored ${resp.shortcuts.length} shortcuts (backed up ${date})`);
+      } else {
+        showDriveStatus(
+          (resp && resp.error) || "Restore failed",
+          true
+        );
+      }
+    });
+  });
+
   // ── Initialize ─────────────────────────────────────────────
   loadShortcuts();
 })();

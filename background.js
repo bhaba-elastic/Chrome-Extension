@@ -335,5 +335,123 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ usageCounts: data.usageCounts || {} });
       });
       return true;
+
+    case "drive-backup":
+      driveBackup(message.shortcuts)
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "drive-restore":
+      driveRestore()
+        .then((result) => sendResponse(result))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
   }
 });
+
+// ── Google Drive sync ────────────────────────────────────────
+
+const DRIVE_FILENAME = "bhaba-tools-shortcuts.json";
+
+function getAuthToken() {
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(token);
+      }
+    });
+  });
+}
+
+// Find existing backup file in Drive by name
+async function findDriveFile(token) {
+  const query = encodeURIComponent(
+    `name='${DRIVE_FILENAME}' and trashed=false`
+  );
+  const resp = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) throw new Error(`Drive search failed: ${resp.status}`);
+  const data = await resp.json();
+  return data.files && data.files.length > 0 ? data.files[0] : null;
+}
+
+// Backup shortcuts to Google Drive
+async function driveBackup(shortcuts) {
+  const token = await getAuthToken();
+  const existing = await findDriveFile(token);
+  const content = JSON.stringify({ shortcuts, exportedAt: new Date().toISOString() }, null, 2);
+
+  if (existing) {
+    // Update existing file
+    const resp = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: content,
+      }
+    );
+    if (!resp.ok) throw new Error(`Drive update failed: ${resp.status}`);
+    return { success: true, fileId: existing.id, updated: true };
+  } else {
+    // Create new file with multipart upload
+    const metadata = { name: DRIVE_FILENAME, mimeType: "application/json" };
+    const boundary = "----DriveBackupBoundary";
+    const body =
+      `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      JSON.stringify(metadata) +
+      `\r\n--${boundary}\r\n` +
+      `Content-Type: application/json\r\n\r\n` +
+      content +
+      `\r\n--${boundary}--`;
+
+    const resp = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": `multipart/related; boundary=${boundary}`,
+        },
+        body,
+      }
+    );
+    if (!resp.ok) throw new Error(`Drive create failed: ${resp.status}`);
+    const file = await resp.json();
+    return { success: true, fileId: file.id, updated: false };
+  }
+}
+
+// Restore shortcuts from Google Drive
+async function driveRestore() {
+  const token = await getAuthToken();
+  const existing = await findDriveFile(token);
+
+  if (!existing) {
+    return { success: false, error: "No backup found in Google Drive" };
+  }
+
+  const resp = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!resp.ok) throw new Error(`Drive download failed: ${resp.status}`);
+
+  const data = await resp.json();
+  if (!data.shortcuts || !Array.isArray(data.shortcuts)) {
+    return { success: false, error: "Invalid backup file format" };
+  }
+
+  // Save restored shortcuts to local storage
+  await chrome.storage.local.set({ shortcuts: data.shortcuts });
+  return { success: true, shortcuts: data.shortcuts, exportedAt: data.exportedAt };
+}
