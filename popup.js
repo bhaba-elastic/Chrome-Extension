@@ -5,6 +5,7 @@
 
   let shortcuts = [];
   let editingId = null; // null = adding new, string = editing existing
+  let usageCounts = {};
 
   const listEl = document.getElementById("shortcut-list");
   const searchEl = document.getElementById("search");
@@ -20,9 +21,16 @@
   // ── Load shortcuts from storage ────────────────────────────
 
   function loadShortcuts() {
+    let ready = 0;
+    const tryRender = () => { if (++ready >= 2) renderList(); };
+
     chrome.runtime.sendMessage({ action: "get-shortcuts" }, (resp) => {
       shortcuts = resp && resp.shortcuts ? resp.shortcuts : [];
-      renderList();
+      tryRender();
+    });
+    chrome.runtime.sendMessage({ action: "get-usage-counts" }, (resp) => {
+      usageCounts = resp && resp.usageCounts ? resp.usageCounts : {};
+      tryRender();
     });
   }
 
@@ -59,9 +67,14 @@
       return;
     }
 
+    // Sort by usage frequency
+    const sortedVisible = [...visible].sort(
+      (a, b) => (usageCounts[b.id] || 0) - (usageCounts[a.id] || 0)
+    );
+
     // Group by category
     const grouped = {};
-    visible.forEach((s) => {
+    sortedVisible.forEach((s) => {
       if (!grouped[s.category]) grouped[s.category] = [];
       grouped[s.category].push(s);
     });
@@ -94,12 +107,14 @@
       grouped[category].forEach((shortcut) => {
         const card = document.createElement("div");
         card.className = "shortcut-card";
+        const count = usageCounts[shortcut.id] || 0;
         card.innerHTML = `
           <div class="shortcut-icon ${shortcut.type}">${icons[shortcut.type] || ""}</div>
           <div class="shortcut-info">
             <div class="shortcut-label">${escapeHtml(shortcut.label)}</div>
             <div class="shortcut-desc">${escapeHtml(shortcut.description)}</div>
           </div>
+          ${count > 0 ? `<span class="usage-badge" title="Used ${count} time${count !== 1 ? 's' : ''}">${count}</span>` : ""}
           <div class="shortcut-actions">
             <button class="edit" title="Edit">✎</button>
             <button class="delete" title="Delete">✕</button>
