@@ -162,6 +162,38 @@ const DEFAULT_SHORTCUTS = [
     type: "action",
     value: "view-source",
     category: "Actions"
+  },
+  {
+    id: "action-close-duplicates",
+    label: "Close Duplicate Tabs",
+    description: "Close all duplicate tabs, keeping one per URL",
+    type: "action",
+    value: "close-duplicate-tabs",
+    category: "Tab Management"
+  },
+  {
+    id: "action-group-by-domain",
+    label: "Group Tabs by Domain",
+    description: "Group all open tabs by their domain",
+    type: "action",
+    value: "group-tabs-by-domain",
+    category: "Tab Management"
+  },
+  {
+    id: "action-move-to-window",
+    label: "Move Tab to New Window",
+    description: "Move the current tab to a new window",
+    type: "action",
+    value: "move-tab-to-window",
+    category: "Tab Management"
+  },
+  {
+    id: "action-custom-group",
+    label: "Add Tab to Custom Group",
+    description: "Add current tab to a named group, creating it if it doesn't exist",
+    type: "action",
+    value: "add-tab-to-group",
+    category: "Tab Management"
   }
 ];
 
@@ -319,6 +351,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true;
 
+    case "close-duplicate-tabs":
+      closeDuplicateTabs().then((result) => sendResponse(result));
+      return true;
+
+    case "group-tabs-by-domain":
+      groupTabsByDomain().then((result) => sendResponse(result));
+      return true;
+
+    case "move-tab-to-window":
+      if (sender.tab) {
+        moveTabToNewWindow(sender.tab.id).then((result) => sendResponse(result));
+        return true;
+      }
+      sendResponse({ success: false, error: "No tab context" });
+      break;
+
+    case "add-tab-to-group":
+      if (sender.tab) {
+        addTabToGroup(sender.tab.id, message.groupName).then((result) => sendResponse(result));
+        return true;
+      }
+      sendResponse({ success: false, error: "No tab context" });
+      break;
+
     case "track-usage":
       // Increment usage count for a shortcut
       chrome.storage.local.get("usageCounts", (data) => {
@@ -367,6 +423,108 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
   }
 });
+
+// ── Tab management ───────────────────────────────────────────
+
+async function closeDuplicateTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const seen = new Map(); // url -> first tab id
+    const toClose = [];
+
+    for (const tab of tabs) {
+      // Skip special pages (chrome://, about:, etc.) and pinned tabs
+      if (!tab.url || !tab.url.startsWith("http")) continue;
+      if (tab.pinned) continue;
+      if (seen.has(tab.url)) {
+        toClose.push(tab.id);
+      } else {
+        seen.set(tab.url, tab.id);
+      }
+    }
+
+    if (toClose.length === 0) {
+      return { success: true, closed: 0 };
+    }
+    await chrome.tabs.remove(toClose);
+    return { success: true, closed: toClose.length };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function groupTabsByDomain() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const byDomain = {};
+
+    for (const tab of tabs) {
+      // Skip special pages and pinned tabs
+      if (!tab.url || !tab.url.startsWith("http")) continue;
+      if (tab.pinned) continue;
+      const domain = new URL(tab.url).hostname;
+      if (!byDomain[domain]) byDomain[domain] = [];
+      byDomain[domain].push(tab.id);
+    }
+
+    // Only group domains that have more than one tab
+    let groupsCreated = 0;
+    for (const [domain, tabIds] of Object.entries(byDomain)) {
+      if (tabIds.length < 2) continue;
+      const groupId = await chrome.tabs.group({ tabIds });
+      await chrome.tabGroups.update(groupId, { title: domain });
+      groupsCreated++;
+    }
+
+    return { success: true, groups: groupsCreated };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function moveTabToNewWindow(tabId) {
+  try {
+    // Check if this is the only tab in the current window
+    const tab = await chrome.tabs.get(tabId);
+    const windowTabs = await chrome.tabs.query({ windowId: tab.windowId });
+    if (windowTabs.length <= 1) {
+      return { success: false, error: "Cannot move — this is the only tab in the window" };
+    }
+    const newWindow = await chrome.windows.create({ tabId });
+    return { success: true, windowId: newWindow.id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function addTabToGroup(tabId, groupName) {
+  try {
+    if (!groupName || !groupName.trim()) {
+      return { success: false, error: "Group name cannot be empty" };
+    }
+    const name = groupName.trim();
+
+    // Check if a group with this name already exists in the same window
+    const tab = await chrome.tabs.get(tabId);
+    const existingGroups = await chrome.tabGroups.query({ windowId: tab.windowId });
+    const match = existingGroups.find(
+      (g) => g.title && g.title.toLowerCase() === name.toLowerCase()
+    );
+
+    if (match) {
+      // Add tab to the existing group
+      await chrome.tabs.group({ tabIds: [tabId], groupId: match.id });
+      return { success: true, groupName: match.title, created: false };
+    } else {
+      // Create a new group with the given name
+      const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+      await chrome.tabGroups.update(groupId, { title: name });
+      return { success: true, groupName: name, created: true };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
 
 // ── Google Drive sync ────────────────────────────────────────
 //
