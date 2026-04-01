@@ -12,6 +12,7 @@
   let selectedIndex = 0;
   let isOpen = false;
   let usageCounts = {};
+  let promptMode = null; // { action, resolve } when waiting for user input
 
   // ── Build DOM ──────────────────────────────────────────────
   const overlay = document.createElement("div");
@@ -241,6 +242,11 @@
         break;
 
       case "action":
+        // Actions that need input stay open in prompt mode
+        if (item.value === "add-tab-to-group") {
+          enterGroupPrompt();
+          return;
+        }
         closePalette();
         executeAction(item.value);
         break;
@@ -305,7 +311,81 @@
       case "view-source":
         chrome.runtime.sendMessage({ action: "view-source" });
         break;
+
+      case "close-duplicate-tabs":
+        chrome.runtime.sendMessage({ action: "close-duplicate-tabs" }, (resp) => {
+          if (resp && resp.success) {
+            showToast(
+              resp.closed > 0
+                ? `Closed ${resp.closed} duplicate tab${resp.closed !== 1 ? "s" : ""}`
+                : "No duplicate tabs found"
+            );
+          } else {
+            showToast("Error: " + (resp && resp.error || "failed to close duplicates"));
+          }
+        });
+        break;
+
+      case "group-tabs-by-domain":
+        chrome.runtime.sendMessage({ action: "group-tabs-by-domain" }, (resp) => {
+          if (resp && resp.success) {
+            showToast(
+              resp.groups > 0
+                ? `Grouped tabs into ${resp.groups} domain group${resp.groups !== 1 ? "s" : ""}`
+                : "No domains with multiple tabs"
+            );
+          } else {
+            showToast("Error: " + (resp && resp.error || "failed to group tabs"));
+          }
+        });
+        break;
+
+      case "move-tab-to-window":
+        chrome.runtime.sendMessage({ action: "move-tab-to-window" }, (resp) => {
+          if (resp && resp.success) {
+            showToast("Tab moved to new window");
+          } else {
+            showToast(resp && resp.error || "Failed to move tab");
+          }
+        });
+        break;
+
     }
+  }
+
+  // ── Group name prompt ─────────────────────────────────────
+  // Switches the palette into a dedicated mode where the search bar
+  // becomes a group name input. Enter confirms, Esc cancels.
+
+  function enterGroupPrompt() {
+    promptMode = { action: "add-tab-to-group" };
+    input.value = "";
+    input.placeholder = "Enter group name...";
+    results.innerHTML = `<div id="devpalette-empty">Type a group name and press <strong>Enter</strong></div>`;
+    input.focus();
+  }
+
+  function submitGroupPrompt() {
+    const groupName = input.value.trim();
+    if (!groupName) {
+      showToast("Group name cannot be empty");
+      return;
+    }
+    closePalette();
+    chrome.runtime.sendMessage(
+      { action: "add-tab-to-group", groupName },
+      (resp) => {
+        if (resp && resp.success) {
+          showToast(
+            resp.created
+              ? `Created group "${resp.groupName}"`
+              : `Added to existing group "${resp.groupName}"`
+          );
+        } else {
+          showToast(resp && resp.error || "Failed to create group");
+        }
+      }
+    );
   }
 
   // ── Toast notification ─────────────────────────────────────
@@ -348,6 +428,8 @@
     isOpen = false;
     overlay.classList.remove("visible");
     input.value = "";
+    input.placeholder = "Type a command...";
+    promptMode = null;
   }
 
   // ── Keyboard handling ──────────────────────────────────────
@@ -382,6 +464,18 @@
 
   // Keyboard navigation within the palette
   input.addEventListener("keydown", (e) => {
+    // In prompt mode: Enter confirms, Esc cancels
+    if (promptMode) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitGroupPrompt();
+      } else if (e.key === "Escape" || e.key === "`") {
+        e.preventDefault();
+        closePalette();
+      }
+      return; // block arrow keys and other shortcuts while prompting
+    }
+
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -413,8 +507,9 @@
     }
   });
 
-  // Live filtering as the user types
+  // Live filtering as the user types — blocked in prompt mode
   input.addEventListener("input", () => {
+    if (promptMode) return;
     filterShortcuts(input.value.trim());
   });
 
