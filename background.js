@@ -194,6 +194,14 @@ const DEFAULT_SHORTCUTS = [
     type: "action",
     value: "add-tab-to-group",
     category: "Tab Management"
+  },
+  {
+    id: "action-group-all-tabs",
+    label: "Group All Tabs",
+    description: "Add all open tabs into one group, creating it or using an existing one",
+    type: "action",
+    value: "group-all-tabs",
+    category: "Tab Management"
   }
 ];
 
@@ -375,6 +383,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: "No tab context" });
       break;
 
+    case "group-all-tabs":
+      if (sender.tab) {
+        groupAllTabs(sender.tab.windowId, message.groupName).then((result) => sendResponse(result));
+        return true;
+      }
+      sendResponse({ success: false, error: "No tab context" });
+      break;
+
     case "track-usage":
       // Increment usage count for a shortcut
       chrome.storage.local.get("usageCounts", (data) => {
@@ -520,6 +536,42 @@ async function addTabToGroup(tabId, groupName) {
       const groupId = await chrome.tabs.group({ tabIds: [tabId] });
       await chrome.tabGroups.update(groupId, { title: name });
       return { success: true, groupName: name, created: true };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function groupAllTabs(windowId, groupName) {
+  try {
+    if (!groupName || !groupName.trim()) {
+      return { success: false, error: "Group name cannot be empty" };
+    }
+    const name = groupName.trim();
+
+    // Get all non-pinned http tabs in the current window
+    const tabs = await chrome.tabs.query({ windowId });
+    const tabIds = tabs
+      .filter((t) => t.url && t.url.startsWith("http") && !t.pinned)
+      .map((t) => t.id);
+
+    if (tabIds.length === 0) {
+      return { success: false, error: "No tabs to group" };
+    }
+
+    // Check if a group with this name already exists
+    const existingGroups = await chrome.tabGroups.query({ windowId });
+    const match = existingGroups.find(
+      (g) => g.title && g.title.toLowerCase() === name.toLowerCase()
+    );
+
+    if (match) {
+      await chrome.tabs.group({ tabIds, groupId: match.id });
+      return { success: true, groupName: match.title, tabCount: tabIds.length, created: false };
+    } else {
+      const groupId = await chrome.tabs.group({ tabIds });
+      await chrome.tabGroups.update(groupId, { title: name });
+      return { success: true, groupName: name, tabCount: tabIds.length, created: true };
     }
   } catch (err) {
     return { success: false, error: err.message };

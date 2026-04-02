@@ -244,7 +244,11 @@
       case "action":
         // Actions that need input stay open in prompt mode
         if (item.value === "add-tab-to-group") {
-          enterGroupPrompt();
+          enterGroupPrompt("add-tab-to-group");
+          return;
+        }
+        if (item.value === "group-all-tabs") {
+          enterGroupPrompt("group-all-tabs");
           return;
         }
         closePalette();
@@ -357,11 +361,14 @@
   // Switches the palette into a dedicated mode where the search bar
   // becomes a group name input. Enter confirms, Esc cancels.
 
-  function enterGroupPrompt() {
-    promptMode = { action: "add-tab-to-group" };
+  function enterGroupPrompt(action) {
+    promptMode = { action };
     input.value = "";
     input.placeholder = "Enter group name...";
-    results.innerHTML = `<div id="devpalette-empty">Type a group name and press <strong>Enter</strong></div>`;
+    const hint = action === "group-all-tabs"
+      ? "Type a group name for all tabs and press <strong>Enter</strong>"
+      : "Type a group name and press <strong>Enter</strong>";
+    results.innerHTML = `<div id="devpalette-empty">${hint}</div>`;
     input.focus();
   }
 
@@ -371,21 +378,27 @@
       showToast("Group name cannot be empty");
       return;
     }
+    const action = promptMode.action;
     closePalette();
-    chrome.runtime.sendMessage(
-      { action: "add-tab-to-group", groupName },
-      (resp) => {
-        if (resp && resp.success) {
+    chrome.runtime.sendMessage({ action, groupName }, (resp) => {
+      if (resp && resp.success) {
+        if (action === "group-all-tabs") {
+          showToast(
+            resp.created
+              ? `Grouped ${resp.tabCount} tabs into "${resp.groupName}"`
+              : `Added ${resp.tabCount} tabs to "${resp.groupName}"`
+          );
+        } else {
           showToast(
             resp.created
               ? `Created group "${resp.groupName}"`
               : `Added to existing group "${resp.groupName}"`
           );
-        } else {
-          showToast(resp && resp.error || "Failed to create group");
         }
+      } else {
+        showToast(resp && resp.error || "Failed to create group");
       }
-    );
+    });
   }
 
   // ── Toast notification ─────────────────────────────────────
